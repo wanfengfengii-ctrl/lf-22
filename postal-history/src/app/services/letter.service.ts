@@ -389,7 +389,7 @@ export class LetterService {
 
     for (const letter of this.lettersSubject.value) {
       for (const postmark of letter.postmarks) {
-        if (postmark.locationName) {
+        if (postmark.type === 'transit' && postmark.locationName) {
           const count = cityCount.get(postmark.locationName) || 0;
           cityCount.set(postmark.locationName, count + 1);
         }

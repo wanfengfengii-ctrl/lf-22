@@ -49,7 +49,7 @@ import { PostmarkType, PostmarkClarity, ValidationResult } from '../../models/le
           <mat-icon>refresh</mat-icon>
           重置
         </button>
-        <button mat-raised-button color="primary" (click)="save()" [disabled]="!letterForm.valid">
+        <button mat-raised-button color="primary" (click)="save()" [disabled]="!letterForm.valid || hasValidationErrors">
           <mat-icon>save</mat-icon>
           保存
         </button>
@@ -577,6 +577,10 @@ export class LetterEditComponent implements OnInit {
         .filter(p => p.type === 'transit')
         .sort((a, b) => a.sequence - b.sequence);
 
+      while (this.transitPostmarks.length > 0) {
+        this.transitPostmarks.removeAt(0);
+      }
+
       for (const transit of transits) {
         const form = this.createPostmarkForm('transit');
         form.patchValue({
@@ -599,6 +603,10 @@ export class LetterEditComponent implements OnInit {
     const letter = this.buildLetterFromForm();
     if (!letter) return false;
     return this.validationService.canGenerateRouteMap(letter);
+  }
+
+  get hasValidationErrors(): boolean {
+    return this.validationResult ? this.validationResult.errors.length > 0 : false;
   }
 
   private buildLetterFromForm(): any {
