@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import { FormBuilder, FormGroup, FormArray, Validators, ReactiveFormsModule, AbstractControl, ValidationErrors } from '@angular/forms';
+import { FormGroup, FormArray, ReactiveFormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -21,10 +21,13 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { LetterService } from '../../services/letter.service';
 import { ValidationService } from '../../services/validation.service';
 import { ConfidenceService } from '../../services/confidence.service';
-import { PostmarkType, PostmarkClarity, ValidationResult, RouteVersion, ConfidenceScore, LocationPrecision, Letter } from '../../models/letter.model';
+import { FormBuilderService } from '../../shared/services/form-builder.service';
+import { DataTransformService } from '../../shared/services/data-transform.service';
+import { LabelService } from '../../shared/services/label.service';
+import { RouteVersion, ValidationResult, ConfidenceScore, Letter } from '../../models/letter.model';
 import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.component';
 import { RouteInferenceComponent } from '../route-inference/route-inference.component';
-import { InferredRoute, InferredPostmark } from '../../models/postal-knowledge.model';
+import { InferredRoute } from '../../models/postal-knowledge.model';
 
 @Component({
   selector: 'app-letter-edit',
@@ -149,7 +152,7 @@ import { InferredRoute, InferredPostmark } from '../../models/postal-knowledge.m
               <div class="confidence-bar" *ngIf="getVersionConfidence(version)">
                 <div class="confidence-header">
                   <span class="confidence-label">可信度</span>
-                  <span class="confidence-value" [style.color]="getConfidenceColor(version)">
+                  <span class="confidence-value" [style.color]="labelService.getConfidenceColor(getVersionConfidence(version)?.percentage || 0)">
                     {{ getVersionConfidence(version)?.percentage }}%
                     ({{ confidenceService.getConfidenceLabel(getVersionConfidence(version)?.percentage || 0) }})
                   </span>
@@ -157,7 +160,7 @@ import { InferredRoute, InferredPostmark } from '../../models/postal-knowledge.m
                 <mat-progress-bar
                   mode="determinate"
                   [value]="getVersionConfidence(version)?.percentage || 0"
-                  [color]="getConfidenceProgressColor(version)"
+                  [color]="labelService.getConfidenceProgressColor(getVersionConfidence(version)?.percentage || 0)"
                 ></mat-progress-bar>
               </div>
             </div>
@@ -703,16 +706,18 @@ export class LetterEditComponent implements OnInit {
   currentConfidence: ConfidenceScore | null = null;
 
   constructor(
-    private fb: FormBuilder,
     private route: ActivatedRoute,
     private router: Router,
     private letterService: LetterService,
     private validationService: ValidationService,
     public confidenceService: ConfidenceService,
+    public formBuilderService: FormBuilderService,
+    public dataTransformService: DataTransformService,
+    public labelService: LabelService,
     private snackBar: MatSnackBar,
     private dialog: MatDialog
   ) {
-    this.createForm();
+    this.letterForm = this.formBuilderService.buildLetterForm();
   }
 
   ngOnInit(): void {
@@ -783,7 +788,7 @@ export class LetterEditComponent implements OnInit {
       ...v,
       id: v.id || '',
       letterId: this.letterId || '',
-      postmarks: this.convertPostmarkDates(v.postmarks || [])
+      postmarks: this.dataTransformService.convertPostmarkDates(v.postmarks || [])
     }));
 
     const officialVersion = versions.find((v: any) => v.isOfficial);
@@ -798,67 +803,6 @@ export class LetterEditComponent implements OnInit {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-  }
-
-  private createForm(): void {
-    this.letterForm = this.fb.group({
-      title: ['', Validators.required],
-      description: [''],
-      versions: this.fb.array([]),
-      officialVersionId: ['']
-    });
-  }
-
-  private createVersionForm(version?: Partial<RouteVersion>): FormGroup {
-    const postmarks = version?.postmarks || [];
-    const postmarkFormArray = this.fb.array(
-      postmarks.map((pm: any) => this.createPostmarkForm(pm))
-    );
-
-    return this.fb.group({
-      id: [version?.id || ''],
-      name: [version?.name || ''],
-      description: [version?.description || ''],
-      isOfficial: [version?.isOfficial || false],
-      postmarks: postmarkFormArray
-    });
-  }
-
-  private createPostmarkForm(postmark?: any): FormGroup {
-    return this.fb.group({
-      id: [postmark?.id || ''],
-      type: [postmark?.type || 'transit'],
-      locationName: [postmark?.locationName || ''],
-      latitude: [postmark?.latitude ?? null, [this.latitudeValidator.bind(this)]],
-      longitude: [postmark?.longitude ?? null, [this.longitudeValidator.bind(this)]],
-      postmarkDate: [postmark?.postmarkDate ? new Date(postmark.postmarkDate) : null],
-      clarity: [postmark?.clarity || 'clear'],
-      notes: [postmark?.notes || ''],
-      sequence: [postmark?.sequence ?? 0],
-      locationPrecision: [postmark?.locationPrecision || 'exact']
-    });
-  }
-
-  latitudeValidator(control: AbstractControl): ValidationErrors | null {
-    if (control.value === null || control.value === '' || control.value === undefined) {
-      return null;
-    }
-    const value = Number(control.value);
-    if (isNaN(value) || value < -90 || value > 90) {
-      return { invalidLatitude: true };
-    }
-    return null;
-  }
-
-  longitudeValidator(control: AbstractControl): ValidationErrors | null {
-    if (control.value === null || control.value === '' || control.value === undefined) {
-      return null;
-    }
-    const value = Number(control.value);
-    if (isNaN(value) || value < -180 || value > 180) {
-      return { invalidLongitude: true };
-    }
-    return null;
   }
 
   getPostmarkType(index: number): string {
@@ -890,21 +834,8 @@ export class LetterEditComponent implements OnInit {
 
   getVersionConfidence(version: any): ConfidenceScore | null {
     if (!version?.postmarks || version.postmarks.length === 0) return null;
-    return this.confidenceService.calculateConfidence(version.postmarks);
-  }
-
-  getConfidenceColor(version: any): string {
-    const conf = this.getVersionConfidence(version);
-    if (!conf) return '#999';
-    return this.confidenceService.getConfidenceColor(conf.percentage);
-  }
-
-  getConfidenceProgressColor(version: any): 'primary' | 'accent' | 'warn' {
-    const conf = this.getVersionConfidence(version);
-    if (!conf) return 'primary';
-    if (conf.percentage >= 70) return 'primary';
-    if (conf.percentage >= 40) return 'accent';
-    return 'warn';
+    const converted = this.dataTransformService.convertPostmarkDates(version.postmarks);
+    return this.confidenceService.calculateConfidence(converted as any);
   }
 
   selectVersion(index: number): void {
@@ -914,16 +845,8 @@ export class LetterEditComponent implements OnInit {
 
   addVersion(): void {
     const isFirstVersion = this.versions.length === 0;
-    const newVersion = {
-      name: `方案 ${this.versions.length + 1}`,
-      description: '',
-      isOfficial: isFirstVersion,
-      postmarks: [
-        { type: 'origin', locationName: '', latitude: null, longitude: null, postmarkDate: null, clarity: 'clear', notes: '', sequence: 0, locationPrecision: 'exact' },
-        { type: 'destination', locationName: '', latitude: null, longitude: null, postmarkDate: null, clarity: 'clear', notes: '', sequence: 1, locationPrecision: 'exact' }
-      ]
-    };
-    const versionForm = this.createVersionForm(newVersion as any);
+    const defaultVersion = this.dataTransformService.createDefaultVersion(this.versions.length);
+    const versionForm = this.formBuilderService.buildVersionForm(defaultVersion as any);
     this.versionsFormArray.push(versionForm);
     this.selectedVersionIndex = this.versions.length - 1;
     if (isFirstVersion) {
@@ -940,19 +863,13 @@ export class LetterEditComponent implements OnInit {
 
   duplicateVersion(index: number): void {
     const sourceVersion = this.versions[index];
-    const newPostmarks = sourceVersion.postmarks.map((p: any, i: number) => ({
-      ...p,
-      id: '',
-      sequence: i
-    }));
-    const newVersion = {
-      ...sourceVersion,
-      id: '',
-      name: `${sourceVersion.name} (副本)`,
-      isOfficial: false,
-      postmarks: newPostmarks
-    };
-    this.versionsFormArray.push(this.createVersionForm(newVersion as any));
+    const newName = `${sourceVersion.name} (副本)`;
+    const duplicated = this.dataTransformService.duplicateVersion(
+      sourceVersion,
+      newName,
+      () => this.dataTransformService.generateId()
+    );
+    this.versionsFormArray.push(this.formBuilderService.buildVersionForm(duplicated as any));
     this.selectedVersionIndex = this.versions.length - 1;
     this.snackBar.open('方案已复制', '关闭', { duration: 2000 });
   }
@@ -1010,36 +927,13 @@ export class LetterEditComponent implements OnInit {
   }
 
   addTransitPostmark(): void {
-    const postmarks = this.postmarksFormArray;
-    const destIndex = postmarks.controls.findIndex(c => c.get('type')?.value === 'destination');
-    const insertIndex = destIndex >= 0 ? destIndex : postmarks.length;
-    const sequence = insertIndex;
-
-    const newPostmark = this.createPostmarkForm({
-      type: 'transit',
-      locationName: '',
-      latitude: null,
-      longitude: null,
-      postmarkDate: null,
-      clarity: 'clear',
-      notes: '',
-      sequence,
-      locationPrecision: 'exact'
-    });
-
-    postmarks.insert(insertIndex, newPostmark);
-    this.resequencePostmarks();
+    if (!this.selectedVersionForm) return;
+    this.formBuilderService.addTransitPostmark(this.selectedVersionForm);
   }
 
   removeTransitPostmark(index: number): void {
-    this.postmarksFormArray.removeAt(index);
-    this.resequencePostmarks();
-  }
-
-  private resequencePostmarks(): void {
-    this.postmarksFormArray.controls.forEach((control, i) => {
-      control.get('sequence')?.setValue(i);
-    });
+    if (!this.selectedVersionForm) return;
+    this.formBuilderService.removePostmark(this.selectedVersionForm, index);
   }
 
   private loadLetter(id: string): void {
@@ -1064,10 +958,10 @@ export class LetterEditComponent implements OnInit {
           isOfficial: true,
           postmarks: letter.postmarks
         };
-        this.versionsFormArray.push(this.createVersionForm(defaultVersion as any));
+        this.versionsFormArray.push(this.formBuilderService.buildVersionForm(defaultVersion as any));
       } else {
         for (const version of versions) {
-          this.versionsFormArray.push(this.createVersionForm(version));
+          this.versionsFormArray.push(this.formBuilderService.buildVersionForm(version));
         }
       }
 
@@ -1107,14 +1001,7 @@ export class LetterEditComponent implements OnInit {
   private getSelectedVersionPostmarks(): any[] {
     if (!this.selectedVersionForm) return [];
     const formValue = this.selectedVersionForm.value;
-    return this.convertPostmarkDates(formValue.postmarks || []);
-  }
-
-  private convertPostmarkDates(postmarks: any[]): any[] {
-    return postmarks.map((pm: any) => ({
-      ...pm,
-      postmarkDate: pm.postmarkDate ? pm.postmarkDate.toISOString?.().split('T')[0] || pm.postmarkDate : null
-    }));
+    return this.dataTransformService.convertPostmarkDates(formValue.postmarks || []);
   }
 
   get canGenerateRoute(): boolean {
@@ -1131,7 +1018,7 @@ export class LetterEditComponent implements OnInit {
       ...v,
       id: v.id || '',
       letterId: this.letterId || '',
-      postmarks: this.convertPostmarkDates(v.postmarks || [])
+      postmarks: this.dataTransformService.convertPostmarkDates(v.postmarks || [])
     }));
 
     const officialVersion = versions.find((v: any) => v.isOfficial);
@@ -1187,18 +1074,18 @@ export class LetterEditComponent implements OnInit {
     }
 
     route.postmarks.forEach((pm, index) => {
-      const postmarkForm = this.createPostmarkForm({
+      const postmarkForm = this.formBuilderService.buildPostmarkForm({
         id: pm.isInferred ? '' : pm.id,
         type: pm.type,
         locationName: pm.locationName,
         latitude: pm.latitude,
         longitude: pm.longitude,
         postmarkDate: pm.postmarkDate ? new Date(pm.postmarkDate) : null,
-        clarity: pm.isInferred ? 'fuzzy' : pm.clarity,
+        clarity: pm.isInferred ? 'fuzzy' : pm.clarity as any,
         notes: pm.inferenceReason || '',
         sequence: index,
         locationPrecision: pm.latitude && pm.longitude ? 'exact' : 'unknown'
-      });
+      } as any);
       postmarksFormArray.push(postmarkForm);
     });
 

@@ -18,6 +18,7 @@ import {
   EvidenceType
 } from '../../models/postal-knowledge.model';
 import { RouteInferenceService } from '../../services/route-inference.service';
+import { LabelService } from '../../shared/services/label.service';
 
 @Component({
   selector: 'app-route-inference',
@@ -72,7 +73,7 @@ import { RouteInferenceService } from '../../services/route-inference.service';
               </div>
               <div class="summary-item">
                 <span class="label">整体可信度</span>
-                <span class="value" [style.color]="getConfidenceColor(inferenceResult.analysisSummary.overallConfidence)">
+                <span class="value" [style.color]="labelService.getConfidenceColor(inferenceResult.analysisSummary.overallConfidence)">
                   {{ inferenceResult.analysisSummary.overallConfidence }}%
                 </span>
               </div>
@@ -106,13 +107,13 @@ import { RouteInferenceService } from '../../services/route-inference.service';
                 <span class="route-name">{{ route.name }}</span>
                 <span
                   class="confidence-badge"
-                  [style.backgroundColor]="getConfidenceColor(route.confidence)"
+                  [style.backgroundColor]="labelService.getConfidenceColor(route.confidence)"
                 >
                   {{ route.confidence }}%
                 </span>
               </mat-card-title>
               <mat-card-subtitle>
-                {{ getConfidenceLabel(route.confidence) }}
+                {{ labelService.getConfidenceLabel(route.confidence) }}
                 <span *ngIf="route.totalDurationDays !== null"> · 约 {{ route.totalDurationDays }} 天</span>
                 <span *ngIf="route.totalDistanceKm !== null"> · {{ route.totalDistanceKm }} 公里</span>
               </mat-card-subtitle>
@@ -402,7 +403,10 @@ export class RouteInferenceComponent implements OnInit, OnChanges {
   inferenceResult: InferenceResult | null = null;
   selectedRouteIndex = 0;
 
-  constructor(private inferenceService: RouteInferenceService) {}
+  constructor(
+    private inferenceService: RouteInferenceService,
+    public labelService: LabelService
+  ) {}
 
   ngOnInit(): void {
     this.runInference();
@@ -422,14 +426,6 @@ export class RouteInferenceComponent implements OnInit, OnChanges {
 
   selectRoute(index: number): void {
     this.selectedRouteIndex = index;
-  }
-
-  getConfidenceLabel(confidence: number): string {
-    return this.inferenceService.getConfidenceLabel(confidence);
-  }
-
-  getConfidenceColor(confidence: number): string {
-    return this.inferenceService.getConfidenceColor(confidence);
   }
 
   onApplyRoute(route: InferredRoute): void {

@@ -19,10 +19,10 @@ import {
   CityEraComparison,
   NetworkNode,
   NetworkEdge,
-  TransportType,
-  TransitRole,
   TimelineDataPoint
 } from '../../models/postal-knowledge.model';
+import { LabelService } from '../../shared/services/label.service';
+import { StatisticsService } from '../../shared/services/statistics.service';
 
 @Component({
   selector: 'app-era-analysis',
@@ -255,7 +255,7 @@ import {
                 <div class="tooltip-title">{{ hoveredNodeData?.name }}</div>
                 <div class="tooltip-row">
                   <span>重要性:</span>
-                  <span>{{ getImportanceLabel(hoveredNodeData?.importance) }}</span>
+                  <span>{{ labelService.getImportanceLabel(hoveredNodeData?.importance) }}</span>
                 </div>
                 <div class="tooltip-row">
                   <span>连接数:</span>
@@ -265,7 +265,7 @@ import {
                   <span>角色:</span>
                   <span>
                     <mat-chip *ngFor="let role of hoveredNodeData?.roles" class="role-chip">
-                      {{ getRoleLabel(role) }}
+                      {{ labelService.getRoleLabel(role) }}
                     </mat-chip>
                   </span>
                 </div>
@@ -298,7 +298,7 @@ import {
                   </div>
                   <div class="role-tags">
                     <span class="role-tag" *ngFor="let role of city.roles">
-                      {{ getRoleLabel(role) }}
+                      {{ labelService.getRoleLabel(role) }}
                     </span>
                   </div>
                   <p class="hub-desc" *ngIf="city.description">
@@ -329,7 +329,7 @@ import {
                     </span>
                     <span class="meta-item">
                       <mat-icon>directions</mat-icon>
-                      {{ getTransportLabel(route.transportType) }}
+                      {{ labelService.getTransportLabel(route.transportType) }}
                     </span>
                   </div>
                   <div class="route-names" *ngIf="route.routeNames.length > 0">
@@ -353,10 +353,10 @@ import {
                   class="transport-card"
                 >
                   <div class="transport-icon">
-                    <mat-icon>{{ getTransportIcon(item.type) }}</mat-icon>
+                    <mat-icon>{{ labelService.getTransportIcon(item.type) }}</mat-icon>
                   </div>
                   <div class="transport-info">
-                    <div class="transport-name">{{ getTransportLabel(item.type) }}</div>
+                    <div class="transport-name">{{ labelService.getTransportLabel(item.type) }}</div>
                     <div class="transport-days">{{ item.avgDays }} <span>天</span></div>
                     <div class="transport-count">{{ item.count }} 条记录</div>
                   </div>
@@ -382,10 +382,10 @@ import {
                   <mat-card-content>
                     <div class="restriction-tags">
                       <span class="restriction-badge" [ngClass]="area.restrictionType">
-                        {{ getRestrictionTypeLabel(area.restrictionType) }}
+                        {{ labelService.getRestrictionLabel(area.restrictionType) }}
                       </span>
                       <span class="area-type-tag">
-                        {{ getAreaTypeLabel(area.areaType) }}
+                        {{ labelService.getAreaLabel(area.areaType) }}
                       </span>
                     </div>
 
@@ -440,7 +440,7 @@ import {
                     <mat-icon *ngIf="cityComparison.importanceChange === 'up'">trending_up</mat-icon>
                     <mat-icon *ngIf="cityComparison.importanceChange === 'down'">trending_down</mat-icon>
                     <mat-icon *ngIf="cityComparison.importanceChange === 'stable'">drag_handle</mat-icon>
-                    {{ getChangeLabel(cityComparison.importanceChange) }}
+                    {{ labelService.getChangeLabel(cityComparison.importanceChange) }}
                   </div>
                 </div>
 
@@ -455,7 +455,7 @@ import {
                     <mat-card-content>
                       <div class="compare-importance">
                         <span class="label">重要性:</span>
-                        <span class="value">{{ getImportanceLabel(era.importance) }}</span>
+                        <span class="value">{{ labelService.getImportanceLabel(era.importance) }}</span>
                       </div>
                       <div class="compare-stats">
                         <div class="stat">
@@ -477,7 +477,7 @@ import {
                       </div>
                       <div class="compare-roles">
                         <span class="role-tag" *ngFor="let role of era.roles">
-                          {{ getRoleLabel(role) }}
+                          {{ labelService.getRoleLabel(role) }}
                         </span>
                       </div>
                     </mat-card-content>
@@ -1358,7 +1358,9 @@ export class EraAnalysisComponent implements OnInit {
   maxCityCount = 0;
 
   constructor(
-    private knowledgeService: PostalKnowledgeService
+    private knowledgeService: PostalKnowledgeService,
+    public labelService: LabelService,
+    private statisticsService: StatisticsService
   ) {}
 
   ngOnInit(): void {
@@ -1404,54 +1406,16 @@ export class EraAnalysisComponent implements OnInit {
 
   private calculateNodePositions(): void {
     if (!this.analysis) return;
-
-    const nodes = this.analysis.nodes;
-    const width = 800;
-    const height = 500;
-    const padding = 60;
-
-    const sortedNodes = [...nodes].sort((a, b) => b.connectionCount - a.connectionCount);
-    
-    const centerX = width / 2;
-    const centerY = height / 2;
-    
-    const rings = [
-      { radius: 0, count: 1 },
-      { radius: 100, count: 5 },
-      { radius: 180, count: 12 },
-      { radius: 240, count: 20 }
-    ];
-
-    let nodeIndex = 0;
-    
-    for (const ring of rings) {
-      const ringNodes = sortedNodes.slice(nodeIndex, nodeIndex + ring.count);
-      nodeIndex += ring.count;
-
-      if (ring.radius === 0) {
-        if (ringNodes.length > 0) {
-          this.nodePositions.set(ringNodes[0].name, { x: centerX, y: centerY });
-        }
-        continue;
-      }
-
-      ringNodes.forEach((node, i) => {
-        const angle = (i / ringNodes.length) * 2 * Math.PI - Math.PI / 2;
-        const x = centerX + ring.radius * Math.cos(angle);
-        const y = centerY + ring.radius * Math.sin(angle);
-        this.nodePositions.set(node.name, { x, y });
-      });
-
-      if (nodeIndex >= sortedNodes.length) break;
-    }
-
-    const remaining = sortedNodes.slice(nodeIndex);
-    remaining.forEach((node, i) => {
-      const angle = (i / remaining.length) * 2 * Math.PI;
-      const x = centerX + 280 * Math.cos(angle);
-      const y = centerY + 200 * Math.sin(angle);
-      this.nodePositions.set(node.name, { x, y });
-    });
+    this.nodePositions = this.statisticsService.calculateNodePositions(
+      this.analysis.nodes.map(n => ({
+        name: n.name,
+        connectionCount: n.connectionCount,
+        importance: n.importance
+      })),
+      800,
+      500,
+      60
+    );
   }
 
   getNodePosition(name: string): { x: number; y: number } | undefined {
@@ -1459,12 +1423,11 @@ export class EraAnalysisComponent implements OnInit {
   }
 
   getNodeRadius(node: NetworkNode): number {
-    const base = node.importance === 'primary' ? 20 : node.importance === 'secondary' ? 14 : 10;
-    return base + Math.min(node.connectionCount * 2, 10);
+    return this.statisticsService.getNodeRadius(node);
   }
 
   getEdgeWidth(edge: NetworkEdge): number {
-    return Math.max(1, Math.min(edge.ruleCount * 1.5, 6));
+    return this.statisticsService.getEdgeWidth(edge);
   }
 
   get hoveredNodeData(): NetworkNode | undefined {
@@ -1474,68 +1437,6 @@ export class EraAnalysisComponent implements OnInit {
 
   get hasRestrictedAreas(): boolean {
     return !!(this.analysis?.restrictedAreas && this.analysis.restrictedAreas.length > 0);
-  }
-
-  getImportanceLabel(importance?: string): string {
-    const labels: Record<string, string> = {
-      primary: '主要枢纽',
-      secondary: '次要城市',
-      tertiary: '三级站点'
-    };
-    return labels[importance || ''] || importance || '';
-  }
-
-  getRoleLabel(role: TransitRole): string {
-    const labels: Record<TransitRole, string> = {
-      hub: '邮政枢纽',
-      border: '边境',
-      port: '港口',
-      railway_station: '火车站',
-      customs: '海关',
-      relay: '驿站'
-    };
-    return labels[role] || role;
-  }
-
-  getTransportLabel(type: TransportType): string {
-    const labels: Record<TransportType, string> = {
-      land: '陆路',
-      water: '水路',
-      rail: '铁路',
-      air: '航空',
-      mixed: '联运'
-    };
-    return labels[type] || type;
-  }
-
-  getTransportIcon(type: TransportType): string {
-    const icons: Record<TransportType, string> = {
-      land: 'directions_car',
-      water: 'directions_boat',
-      rail: 'train',
-      air: 'flight',
-      mixed: 'swap_horiz'
-    };
-    return icons[type] || 'route';
-  }
-
-  getRestrictionTypeLabel(type: string): string {
-    const labels: Record<string, string> = {
-      prohibited: '禁止',
-      restricted: '限制',
-      suspended: '暂停'
-    };
-    return labels[type] || type;
-  }
-
-  getAreaTypeLabel(type: string): string {
-    const labels: Record<string, string> = {
-      city: '城市',
-      region: '地区',
-      border: '边境',
-      route: '路线'
-    };
-    return labels[type] || type;
   }
 
   runComparison(): void {
@@ -1554,15 +1455,6 @@ export class EraAnalysisComponent implements OnInit {
       this.selectedCityForCompare,
       eras
     );
-  }
-
-  getChangeLabel(change: string): string {
-    const labels: Record<string, string> = {
-      up: '地位提升',
-      down: '地位下降',
-      stable: '保持稳定'
-    };
-    return labels[change] || change;
   }
 
   private generateTimeline(): void {

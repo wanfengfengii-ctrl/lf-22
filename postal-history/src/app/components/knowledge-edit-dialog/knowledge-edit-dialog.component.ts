@@ -1,6 +1,6 @@
 import { Component, Inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, FormArray, Validators, ReactiveFormsModule } from '@angular/forms';
+import { FormGroup, FormArray, ReactiveFormsModule } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogRef, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -16,11 +16,11 @@ import {
   TransitCity,
   RestrictedArea,
   TransitDuration,
-  TransportType,
-  TransitRole,
-  RestrictionType,
-  AreaType
+  TransitRole
 } from '../../models/postal-knowledge.model';
+import { FormBuilderService } from '../../shared/services/form-builder.service';
+import { DataTransformService } from '../../shared/services/data-transform.service';
+import { LabelService } from '../../shared/services/label.service';
 
 export type KnowledgeEntityType = 'rule' | 'city' | 'restricted' | 'duration';
 
@@ -460,7 +460,9 @@ export class KnowledgeEditDialogComponent implements OnInit {
   separatorKeysCodes = [13, 188];
 
   constructor(
-    private fb: FormBuilder,
+    private formBuilderService: FormBuilderService,
+    private dataTransformService: DataTransformService,
+    public labelService: LabelService,
     public dialogRef: MatDialogRef<KnowledgeEditDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: KnowledgeEditDialogData
   ) {}
@@ -468,10 +470,6 @@ export class KnowledgeEditDialogComponent implements OnInit {
   ngOnInit(): void {
     this.isEdit = !!this.data.entity;
     this.buildForm();
-
-    if (this.data.entity) {
-      this.populateForm(this.data.entity);
-    }
   }
 
   get dialogTitle(): string {
@@ -495,186 +493,40 @@ export class KnowledgeEditDialogComponent implements OnInit {
   private buildForm(): void {
     switch (this.data.type) {
       case 'rule':
-        this.form = this.fb.group({
-          name: ['', Validators.required],
-          era: ['', Validators.required],
-          startYear: [null as number | null],
-          endYear: [null as number | null],
-          description: [''],
-          origin: ['', Validators.required],
-          destination: ['', Validators.required],
-          transitCities: this.fb.array([]),
-          typicalDurationDays: [null as number | null],
-          minDurationDays: [null as number | null],
-          maxDurationDays: [null as number | null],
-          transportType: ['mixed' as TransportType],
-          frequency: [''],
-          source: [''],
-          notes: ['']
-        });
+        this.form = this.formBuilderService.buildRuleForm(this.data.entity as PostalRouteRule);
         break;
-
       case 'city':
-        this.form = this.fb.group({
-          name: ['', Validators.required],
-          latitude: [null as number | null],
-          longitude: [null as number | null],
-          province: [''],
-          era: ['', Validators.required],
-          importance: ['secondary' as 'primary' | 'secondary' | 'tertiary'],
-          role_hub: [false],
-          role_port: [false],
-          role_customs: [false],
-          role_railway_station: [false],
-          role_border: [false],
-          role_relay: [false],
-          description: [''],
-          source: ['']
-        });
+        this.form = this.formBuilderService.buildCityForm(this.data.entity as TransitCity);
         break;
-
       case 'restricted':
-        this.form = this.fb.group({
-          name: ['', Validators.required],
-          era: ['', Validators.required],
-          startYear: [null as number | null],
-          endYear: [null as number | null],
-          restrictionType: ['restricted' as RestrictionType],
-          areaType: ['region' as AreaType],
-          locationNames: this.fb.array([]),
-          description: [''],
-          source: ['']
-        });
+        this.form = this.formBuilderService.buildRestrictedForm(this.data.entity as RestrictedArea);
         break;
-
       case 'duration':
-        this.form = this.fb.group({
-          fromCity: ['', Validators.required],
-          toCity: ['', Validators.required],
-          era: ['', Validators.required],
-          transportType: ['mixed' as TransportType],
-          typicalDays: [0, Validators.required],
-          minDays: [null as number | null],
-          maxDays: [null as number | null],
-          source: [''],
-          notes: ['']
-        });
-        break;
-    }
-  }
-
-  private populateForm(entity: any): void {
-    switch (this.data.type) {
-      case 'rule':
-        const rule = entity as PostalRouteRule;
-        this.form.patchValue({
-          name: rule.name,
-          era: rule.era,
-          startYear: rule.startYear,
-          endYear: rule.endYear,
-          description: rule.description || '',
-          origin: rule.origin,
-          destination: rule.destination,
-          typicalDurationDays: rule.typicalDurationDays,
-          minDurationDays: rule.minDurationDays,
-          maxDurationDays: rule.maxDurationDays,
-          transportType: rule.transportType,
-          frequency: rule.frequency || '',
-          source: rule.source || '',
-          notes: rule.notes || ''
-        });
-        rule.transitCities.forEach(city => {
-          this.transitCitiesArray.push(this.fb.control(city));
-        });
-        break;
-
-      case 'city':
-        const city = entity as TransitCity;
-        this.form.patchValue({
-          name: city.name,
-          latitude: city.latitude,
-          longitude: city.longitude,
-          province: city.province || '',
-          era: city.era,
-          importance: city.importance,
-          description: city.description || '',
-          source: city.source || '',
-          role_hub: city.roles.includes('hub'),
-          role_port: city.roles.includes('port'),
-          role_customs: city.roles.includes('customs'),
-          role_railway_station: city.roles.includes('railway_station'),
-          role_border: city.roles.includes('border'),
-          role_relay: city.roles.includes('relay')
-        });
-        break;
-
-      case 'restricted':
-        const restricted = entity as RestrictedArea;
-        this.form.patchValue({
-          name: restricted.name,
-          era: restricted.era,
-          startYear: restricted.startYear,
-          endYear: restricted.endYear,
-          restrictionType: restricted.restrictionType,
-          areaType: restricted.areaType,
-          description: restricted.description || '',
-          source: restricted.source || ''
-        });
-        restricted.locationNames.forEach(loc => {
-          this.locationNamesArray.push(this.fb.control(loc));
-        });
-        break;
-
-      case 'duration':
-        const duration = entity as TransitDuration;
-        this.form.patchValue({
-          fromCity: duration.fromCity,
-          toCity: duration.toCity,
-          era: duration.era,
-          transportType: duration.transportType,
-          typicalDays: duration.typicalDays,
-          minDays: duration.minDays,
-          maxDays: duration.maxDays,
-          source: duration.source || '',
-          notes: duration.notes || ''
-        });
+        this.form = this.formBuilderService.buildDurationForm(this.data.entity as TransitDuration);
         break;
     }
   }
 
   addTransitCity(event: any): void {
-    const value = (event.value || '').trim();
-    if (value) {
-      this.transitCitiesArray.push(this.fb.control(value));
-      event.chipInput!.clear();
-    }
+    this.formBuilderService.addChipItem(this.transitCitiesArray, event.value || '');
+    event.chipInput!.clear();
   }
 
   removeTransitCity(index: number): void {
-    this.transitCitiesArray.removeAt(index);
+    this.formBuilderService.removeChipItem(this.transitCitiesArray, index);
   }
 
   addLocationName(event: any): void {
-    const value = (event.value || '').trim();
-    if (value) {
-      this.locationNamesArray.push(this.fb.control(value));
-      event.chipInput!.clear();
-    }
+    this.formBuilderService.addChipItem(this.locationNamesArray, event.value || '');
+    event.chipInput!.clear();
   }
 
   removeLocationName(index: number): void {
-    this.locationNamesArray.removeAt(index);
+    this.formBuilderService.removeChipItem(this.locationNamesArray, index);
   }
 
   private getRolesFromForm(): TransitRole[] {
-    const roles: TransitRole[] = [];
-    if (this.form.get('role_hub')?.value) roles.push('hub');
-    if (this.form.get('role_port')?.value) roles.push('port');
-    if (this.form.get('role_customs')?.value) roles.push('customs');
-    if (this.form.get('role_railway_station')?.value) roles.push('railway_station');
-    if (this.form.get('role_border')?.value) roles.push('border');
-    if (this.form.get('role_relay')?.value) roles.push('relay');
-    return roles;
+    return this.dataTransformService.rolesFromForm(this.form.value);
   }
 
   onSubmit(): void {
@@ -685,65 +537,16 @@ export class KnowledgeEditDialogComponent implements OnInit {
 
     switch (this.data.type) {
       case 'rule':
-        result = {
-          name: formValue.name,
-          era: formValue.era,
-          startYear: formValue.startYear ? Number(formValue.startYear) : null,
-          endYear: formValue.endYear ? Number(formValue.endYear) : null,
-          description: formValue.description || null,
-          origin: formValue.origin,
-          destination: formValue.destination,
-          transitCities: this.transitCitiesArray.value,
-          typicalDurationDays: formValue.typicalDurationDays ? Number(formValue.typicalDurationDays) : null,
-          minDurationDays: formValue.minDurationDays ? Number(formValue.minDurationDays) : null,
-          maxDurationDays: formValue.maxDurationDays ? Number(formValue.maxDurationDays) : null,
-          transportType: formValue.transportType,
-          frequency: formValue.frequency || null,
-          source: formValue.source || null,
-          notes: formValue.notes || null
-        };
+        result = this.dataTransformService.sanitizeRuleForm(formValue, this.transitCitiesArray.value);
         break;
-
       case 'city':
-        result = {
-          name: formValue.name,
-          latitude: formValue.latitude ? Number(formValue.latitude) : null,
-          longitude: formValue.longitude ? Number(formValue.longitude) : null,
-          province: formValue.province || null,
-          era: formValue.era,
-          importance: formValue.importance,
-          roles: this.getRolesFromForm(),
-          description: formValue.description || null,
-          source: formValue.source || null
-        };
+        result = this.dataTransformService.sanitizeCityForm(formValue, this.getRolesFromForm());
         break;
-
       case 'restricted':
-        result = {
-          name: formValue.name,
-          era: formValue.era,
-          startYear: formValue.startYear ? Number(formValue.startYear) : null,
-          endYear: formValue.endYear ? Number(formValue.endYear) : null,
-          restrictionType: formValue.restrictionType,
-          areaType: formValue.areaType,
-          locationNames: this.locationNamesArray.value,
-          description: formValue.description || null,
-          source: formValue.source || null
-        };
+        result = this.dataTransformService.sanitizeRestrictedForm(formValue, this.locationNamesArray.value);
         break;
-
       case 'duration':
-        result = {
-          fromCity: formValue.fromCity,
-          toCity: formValue.toCity,
-          era: formValue.era,
-          transportType: formValue.transportType,
-          typicalDays: Number(formValue.typicalDays),
-          minDays: formValue.minDays ? Number(formValue.minDays) : null,
-          maxDays: formValue.maxDays ? Number(formValue.maxDays) : null,
-          source: formValue.source || null,
-          notes: formValue.notes || null
-        };
+        result = this.dataTransformService.sanitizeDurationForm(formValue);
         break;
     }
 
