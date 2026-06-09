@@ -129,3 +129,70 @@ export interface InferenceSummary {
   overallConfidence: number;
   warnings: string[];
 }
+
+export interface EraFilter {
+  startYear: number | null;
+  endYear: number | null;
+  eraName?: string;
+}
+
+export interface NetworkNode {
+  name: string;
+  latitude: number | null;
+  longitude: number | null;
+  importance: 'primary' | 'secondary' | 'tertiary';
+  roles: TransitRole[];
+  connectionCount: number;
+  province?: string;
+  description?: string;
+}
+
+export interface NetworkEdge {
+  from: string;
+  to: string;
+  typicalDays: number | null;
+  transportType: TransportType;
+  frequency?: string;
+  ruleCount: number;
+  routeNames: string[];
+}
+
+export interface EraNetworkAnalysis {
+  eraLabel: string;
+  startYear: number | null;
+  endYear: number | null;
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+  hubCities: NetworkNode[];
+  trunkRoutes: NetworkEdge[];
+  restrictedAreas: RestrictedArea[];
+  averageDuration: number | null;
+  totalRoutes: number;
+  totalCities: number;
+  durationByTransport: { type: TransportType; avgDays: number; count: number }[];
+}
+
+export interface CityEraComparison {
+  cityName: string;
+  eras: {
+    eraLabel: string;
+    startYear: number | null;
+    endYear: number | null;
+    importance: 'primary' | 'secondary' | 'tertiary';
+    roles: TransitRole[];
+    connectionCount: number;
+    outgoingRoutes: number;
+    incomingRoutes: number;
+    avgDuration: number | null;
+  }[];
+  roleChanges: string[];
+  importanceChange: 'up' | 'down' | 'stable';
+}
+
+export interface TimelineDataPoint {
+  year: number;
+  routeCount: number;
+  cityCount: number;
+  avgDuration: number | null;
+  restrictedAreaCount: number;
+}

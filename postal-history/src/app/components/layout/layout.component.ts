@@ -24,6 +24,10 @@ import { MatIconModule } from '@angular/material/icon';
         <mat-icon>menu_book</mat-icon>
         邮路知识库
       </a>
+      <a mat-button routerLink="/era-analysis" routerLinkActive="active">
+        <mat-icon>timeline</mat-icon>
+        时代分析
+      </a>
     </mat-toolbar>
     <div class="content">
       <router-outlet></router-outlet>

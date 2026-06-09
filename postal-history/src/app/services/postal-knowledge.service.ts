@@ -5,7 +5,13 @@ import {
   TransitCity,
   RestrictedArea,
   TransitDuration,
-  TransportType
+  TransportType,
+  EraFilter,
+  NetworkNode,
+  NetworkEdge,
+  EraNetworkAnalysis,
+  CityEraComparison,
+  TimelineDataPoint
 } from '../models/postal-knowledge.model';
 
 const RULES_STORAGE_KEY = 'postal_knowledge_rules';
@@ -732,5 +738,314 @@ export class PostalKnowledgeService {
 
   getDurationsByEra(era: string): TransitDuration[] {
     return this.durationsSubject.value.filter(d => d.era === era);
+  }
+
+  getRulesByYearRange(startYear: number | null, endYear: number | null): PostalRouteRule[] {
+    return this.rulesSubject.value.filter(r => {
+      const ruleStart = r.startYear ?? -Infinity;
+      const ruleEnd = r.endYear ?? Infinity;
+      const filterStart = startYear ?? -Infinity;
+      const filterEnd = endYear ?? Infinity;
+      return ruleStart <= filterEnd && ruleEnd >= filterStart;
+    });
+  }
+
+  getCitiesByYearRange(startYear: number | null, endYear: number | null): TransitCity[] {
+    return this.citiesSubject.value.filter(c => {
+      const cStart = this.parseEraStartYear(c.era);
+      const cEnd = this.parseEraEndYear(c.era);
+      const filterStart = startYear ?? -Infinity;
+      const filterEnd = endYear ?? Infinity;
+      return cStart <= filterEnd && cEnd >= filterStart;
+    });
+  }
+
+  getRestrictedAreasByYearRange(startYear: number | null, endYear: number | null): RestrictedArea[] {
+    return this.restrictedAreasSubject.value.filter(r => {
+      const rStart = r.startYear ?? -Infinity;
+      const rEnd = r.endYear ?? Infinity;
+      const filterStart = startYear ?? -Infinity;
+      const filterEnd = endYear ?? Infinity;
+      return rStart <= filterEnd && rEnd >= filterStart;
+    });
+  }
+
+  getDurationsByYearRange(startYear: number | null, endYear: number | null): TransitDuration[] {
+    return this.durationsSubject.value.filter(d => {
+      const dStart = this.parseEraStartYear(d.era);
+      const dEnd = this.parseEraEndYear(d.era);
+      const filterStart = startYear ?? -Infinity;
+      const filterEnd = endYear ?? Infinity;
+      return dStart <= filterEnd && dEnd >= filterStart;
+    });
+  }
+
+  private parseEraStartYear(era: string): number {
+    if (era.includes('清代')) return 1644;
+    if (era.includes('民国')) return 1912;
+    if (era.includes('现代') || era.includes('当代')) return 1949;
+    return -Infinity;
+  }
+
+  private parseEraEndYear(era: string): number {
+    if (era.includes('清代民国') || era.includes('明清')) return Infinity;
+    if (era.includes('清代')) return 1911;
+    if (era.includes('民国')) return 1949;
+    if (era.includes('现代') || era.includes('当代')) return Infinity;
+    return Infinity;
+  }
+
+  analyzeEraNetwork(filter: EraFilter): EraNetworkAnalysis {
+    const { startYear, endYear, eraName } = filter;
+    const rules = this.getRulesByYearRange(startYear, endYear);
+    const cities = this.getCitiesByYearRange(startYear, endYear);
+    const restrictedAreas = this.getRestrictedAreasByYearRange(startYear, endYear);
+    const durations = this.getDurationsByYearRange(startYear, endYear);
+
+    const nodeMap = new Map<string, NetworkNode>();
+    const edgeMap = new Map<string, NetworkEdge>();
+
+    cities.forEach(city => {
+      nodeMap.set(city.name, {
+        name: city.name,
+        latitude: city.latitude,
+        longitude: city.longitude,
+        importance: city.importance,
+        roles: [...city.roles],
+        connectionCount: 0,
+        province: city.province,
+        description: city.description
+      });
+    });
+
+    rules.forEach(rule => {
+      const allCities = [rule.origin, ...rule.transitCities, rule.destination];
+      
+      allCities.forEach(cityName => {
+        if (!nodeMap.has(cityName)) {
+          nodeMap.set(cityName, {
+            name: cityName,
+            latitude: null,
+            longitude: null,
+            importance: 'tertiary',
+            roles: [],
+            connectionCount: 0
+          });
+        }
+        const node = nodeMap.get(cityName)!;
+        node.connectionCount++;
+      });
+
+      for (let i = 0; i < allCities.length - 1; i++) {
+        const from = allCities[i];
+        const to = allCities[i + 1];
+        const edgeKey = [from, to].sort().join('|');
+        
+        if (!edgeMap.has(edgeKey)) {
+          const duration = durations.find(d =>
+            (d.fromCity === from && d.toCity === to) ||
+            (d.fromCity === to && d.toCity === from)
+          );
+          edgeMap.set(edgeKey, {
+            from,
+            to,
+            typicalDays: duration?.typicalDays ?? rule.typicalDurationDays,
+            transportType: rule.transportType,
+            frequency: rule.frequency,
+            ruleCount: 0,
+            routeNames: []
+          });
+        }
+        const edge = edgeMap.get(edgeKey)!;
+        edge.ruleCount++;
+        edge.routeNames.push(rule.name);
+      }
+    });
+
+    const nodes = Array.from(nodeMap.values());
+    const edges = Array.from(edgeMap.values());
+
+    const hubCities = nodes
+      .filter(n => n.importance === 'primary')
+      .sort((a, b) => b.connectionCount - a.connectionCount);
+
+    const trunkRoutes = edges
+      .sort((a, b) => b.ruleCount - a.ruleCount)
+      .slice(0, 10);
+
+    const totalDuration = durations.reduce((sum, d) => sum + d.typicalDays, 0);
+    const averageDuration = durations.length > 0
+      ? Math.round(totalDuration / durations.length * 10) / 10
+      : null;
+
+    const durationByTransportMap = new Map<TransportType, { total: number; count: number }>();
+    durations.forEach(d => {
+      if (!durationByTransportMap.has(d.transportType)) {
+        durationByTransportMap.set(d.transportType, { total: 0, count: 0 });
+      }
+      const entry = durationByTransportMap.get(d.transportType)!;
+      entry.total += d.typicalDays;
+      entry.count++;
+    });
+    const durationByTransport = Array.from(durationByTransportMap.entries()).map(([type, data]) => ({
+      type,
+      avgDays: Math.round(data.total / data.count * 10) / 10,
+      count: data.count
+    }));
+
+    const eraLabel = eraName || (startYear && endYear
+      ? `${startYear} - ${endYear} 年`
+      : startYear
+        ? `${startYear} 年起`
+        : endYear
+          ? `${endYear} 年止`
+          : '全部时代');
+
+    return {
+      eraLabel,
+      startYear,
+      endYear,
+      nodes,
+      edges,
+      hubCities,
+      trunkRoutes,
+      restrictedAreas,
+      averageDuration,
+      totalRoutes: rules.length,
+      totalCities: nodes.length,
+      durationByTransport
+    };
+  }
+
+  compareCityAcrossEras(cityName: string, eraFilters: EraFilter[]): CityEraComparison | null {
+    const eraAnalyses = eraFilters.map(filter => this.analyzeEraNetwork(filter));
+    
+    const cityEras = eraAnalyses.map(analysis => {
+      const node = analysis.nodes.find(n => n.name === cityName);
+      const outgoing = analysis.edges.filter(e => e.from === cityName).length;
+      const incoming = analysis.edges.filter(e => e.to === cityName).length;
+      
+      const relatedDurations = [...analysis.edges.filter(e => e.from === cityName || e.to === cityName)];
+      const avgDuration = relatedDurations.length > 0
+        ? Math.round(
+            relatedDurations.reduce((sum, e) => sum + (e.typicalDays || 0), 0) / relatedDurations.length * 10
+          ) / 10
+        : null;
+
+      return {
+        eraLabel: analysis.eraLabel,
+        startYear: analysis.startYear,
+        endYear: analysis.endYear,
+        importance: node?.importance || 'tertiary',
+        roles: node?.roles || [],
+        connectionCount: node?.connectionCount || 0,
+        outgoingRoutes: outgoing,
+        incomingRoutes: incoming,
+        avgDuration
+      };
+    });
+
+    if (cityEras.length < 2) {
+      return null;
+    }
+
+    const roleChanges: string[] = [];
+    const allRoles = new Set<string>();
+    cityEras.forEach(e => e.roles.forEach(r => allRoles.add(r)));
+
+    const firstEra = cityEras[0];
+    const lastEra = cityEras[cityEras.length - 1];
+
+    const addedRoles = lastEra.roles.filter(r => !firstEra.roles.includes(r as any));
+    const removedRoles = firstEra.roles.filter(r => !lastEra.roles.includes(r as any));
+
+    addedRoles.forEach(role => roleChanges.push(`新增角色: ${this.getRoleLabel(role as any)}`));
+    removedRoles.forEach(role => roleChanges.push(`失去角色: ${this.getRoleLabel(role as any)}`));
+
+    const importanceOrder = { primary: 3, secondary: 2, tertiary: 1 };
+    const importanceChange = importanceOrder[lastEra.importance] > importanceOrder[firstEra.importance]
+      ? 'up'
+      : importanceOrder[lastEra.importance] < importanceOrder[firstEra.importance]
+        ? 'down'
+        : 'stable';
+
+    return {
+      cityName,
+      eras: cityEras,
+      roleChanges,
+      importanceChange
+    };
+  }
+
+  private getRoleLabel(role: string): string {
+    const labels: Record<string, string> = {
+      hub: '邮政枢纽',
+      border: '边境',
+      port: '港口',
+      railway_station: '火车站',
+      customs: '海关',
+      relay: '驿站'
+    };
+    return labels[role] || role;
+  }
+
+  getYearRange(): { min: number; max: number } {
+    const allYears: number[] = [];
+    
+    this.rulesSubject.value.forEach(r => {
+      if (r.startYear) allYears.push(r.startYear);
+      if (r.endYear) allYears.push(r.endYear);
+    });
+    this.restrictedAreasSubject.value.forEach(r => {
+      if (r.startYear) allYears.push(r.startYear);
+      if (r.endYear) allYears.push(r.endYear);
+    });
+
+    if (allYears.length === 0) {
+      return { min: 1850, max: 1950 };
+    }
+
+    return {
+      min: Math.floor(Math.min(...allYears) / 10) * 10,
+      max: Math.ceil(Math.max(...allYears) / 10) * 10
+    };
+  }
+
+  getTimelineData(startYear: number, endYear: number, step: number = 10): TimelineDataPoint[] {
+    const dataPoints: TimelineDataPoint[] = [];
+    
+    for (let year = startYear; year <= endYear; year += step) {
+      const periodStart = year;
+      const periodEnd = year + step - 1;
+      
+      const rules = this.getRulesByYearRange(periodStart, periodEnd);
+      const cities = this.getCitiesByYearRange(periodStart, periodEnd);
+      const restricted = this.getRestrictedAreasByYearRange(periodStart, periodEnd);
+      const durations = this.getDurationsByYearRange(periodStart, periodEnd);
+      
+      const avgDuration = durations.length > 0
+        ? Math.round(durations.reduce((sum, d) => sum + d.typicalDays, 0) / durations.length * 10) / 10
+        : null;
+
+      dataPoints.push({
+        year,
+        routeCount: rules.length,
+        cityCount: cities.length,
+        avgDuration,
+        restrictedAreaCount: restricted.length
+      });
+    }
+
+    return dataPoints;
+  }
+
+  getPresetEras(): { name: string; startYear: number; endYear: number }[] {
+    return [
+      { name: '清代晚期', startYear: 1840, endYear: 1911 },
+      { name: '民国初期', startYear: 1912, endYear: 1927 },
+      { name: '民国中期', startYear: 1928, endYear: 1937 },
+      { name: '抗战时期', startYear: 1937, endYear: 1945 },
+      { name: '民国晚期', startYear: 1945, endYear: 1949 }
+    ];
   }
 }
