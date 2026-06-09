@@ -6,15 +6,18 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { FormsModule } from '@angular/forms';
 import { LetterService } from '../../services/letter.service';
+import { ConfidenceService } from '../../services/confidence.service';
 import { Letter } from '../../models/letter.model';
 import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-letter-list',
   standalone: true,
-  imports: [CommonModule, MatCardModule, MatButtonModule, MatIconModule, MatInputModule, MatDialogModule, FormsModule],
+  imports: [CommonModule, MatCardModule, MatButtonModule, MatIconModule, MatInputModule, MatDialogModule, MatChipsModule, MatProgressBarModule, FormsModule],
   template: `
     <div class="page-header">
       <h1>信件管理</h1>
@@ -35,7 +38,16 @@ import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.compone
       <mat-card *ngFor="let letter of filteredLetters" class="letter-card">
         <mat-card-header>
           <mat-card-title>{{ letter.title }}</mat-card-title>
-          <mat-card-subtitle>{{ letter.postmarks.length }} 个邮戳</mat-card-subtitle>
+          <mat-card-subtitle>
+            <span class="version-count">
+              <mat-icon>route</mat-icon>
+              {{ getVersionCount(letter) }} 个方案
+            </span>
+            <span class="official-badge" *ngIf="getOfficialVersion(letter)">
+              <mat-icon>star</mat-icon>
+              正式方案：{{ getOfficialVersion(letter)?.name }}
+            </span>
+          </mat-card-subtitle>
         </mat-card-header>
         <mat-card-content>
           <p *ngIf="letter.description" class="description">{{ letter.description }}</p>
@@ -49,6 +61,22 @@ import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.compone
               <mat-icon>flag</mat-icon>
               {{ getDestinationName(letter) }}
             </span>
+          </div>
+          <div class="confidence-preview" *ngIf="getOfficialConfidence(letter) !== null">
+            <div class="confidence-header">
+              <span class="confidence-label">正式方案可信度</span>
+              <span
+                class="confidence-value"
+                [style.color]="confidenceService.getConfidenceColor(getOfficialConfidence(letter) || 0)"
+              >
+                {{ getOfficialConfidence(letter) }}%
+              </span>
+            </div>
+            <mat-progress-bar
+              mode="determinate"
+              [value]="getOfficialConfidence(letter) || 0"
+              [color]="getConfidenceProgressColor(letter)"
+            ></mat-progress-bar>
           </div>
         </mat-card-content>
         <mat-card-actions align="end">
@@ -123,6 +151,7 @@ import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.compone
       gap: 8px;
       color: #666;
       font-size: 0.9em;
+      margin-bottom: 12px;
     }
     .info-item {
       display: flex;
@@ -131,6 +160,48 @@ import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.compone
     }
     .arrow {
       color: #999;
+    }
+    .version-count {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.85rem;
+    }
+    .version-count mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
+    .official-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.8rem;
+      color: #1976d2;
+      margin-top: 4px;
+    }
+    .official-badge mat-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+    }
+    .confidence-preview {
+      padding-top: 12px;
+      border-top: 1px solid #eee;
+    }
+    .confidence-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .confidence-header .confidence-label {
+      font-size: 0.85rem;
+      color: #666;
+    }
+    .confidence-header .confidence-value {
+      font-weight: bold;
+      font-size: 0.9rem;
     }
     .empty-state {
       text-align: center;
@@ -161,6 +232,7 @@ export class LetterListComponent implements OnInit {
 
   constructor(
     private letterService: LetterService,
+    public confidenceService: ConfidenceService,
     private router: Router,
     private dialog: MatDialog
   ) {}
@@ -184,13 +256,49 @@ export class LetterListComponent implements OnInit {
   }
 
   getOriginName(letter: Letter): string {
-    const origin = letter.postmarks.find(p => p.type === 'origin');
+    const postmarks = this.getActivePostmarks(letter);
+    const origin = postmarks.find(p => p.type === 'origin');
     return origin?.locationName || '未知';
   }
 
   getDestinationName(letter: Letter): string {
-    const dest = letter.postmarks.find(p => p.type === 'destination');
+    const postmarks = this.getActivePostmarks(letter);
+    const dest = postmarks.find(p => p.type === 'destination');
     return dest?.locationName || '未知';
+  }
+
+  getVersionCount(letter: Letter): number {
+    return letter.versions?.length || (letter.postmarks.length > 0 ? 1 : 0);
+  }
+
+  getOfficialVersion(letter: Letter): any {
+    if (letter.versions && letter.versions.length > 0) {
+      if (letter.officialVersionId) {
+        return letter.versions.find(v => v.id === letter.officialVersionId);
+      }
+      return letter.versions.find(v => v.isOfficial) || letter.versions[0];
+    }
+    return null;
+  }
+
+  private getActivePostmarks(letter: Letter): any[] {
+    const official = this.getOfficialVersion(letter);
+    if (official) return official.postmarks;
+    return letter.postmarks || [];
+  }
+
+  getOfficialConfidence(letter: Letter): number | null {
+    const official = this.getOfficialVersion(letter);
+    if (!official || !official.postmarks || official.postmarks.length === 0) return null;
+    return this.confidenceService.calculateConfidence(official.postmarks).percentage;
+  }
+
+  getConfidenceProgressColor(letter: Letter): 'primary' | 'accent' | 'warn' {
+    const conf = this.getOfficialConfidence(letter);
+    if (conf === null) return 'primary';
+    if (conf >= 70) return 'primary';
+    if (conf >= 40) return 'accent';
+    return 'warn';
   }
 
   createLetter(): void {

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, map } from 'rxjs';
-import { Letter, Postmark, RouteSegment, CityStat, DurationStat } from '../models/letter.model';
+import { Letter, Postmark, RouteSegment, CityStat, DurationStat, RouteVersion } from '../models/letter.model';
 
 const STORAGE_KEY = 'postal_history_letters';
 
@@ -19,11 +19,14 @@ export class LetterService {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
-        const letters = JSON.parse(stored);
+        let letters = JSON.parse(stored);
+        letters = letters.map((l: Letter) => this.migrateLegacyLetter(l));
         this.lettersSubject.next(letters);
+        this.saveLetters(letters);
       } catch {
-        this.lettersSubject.next(this.getSampleLetters());
-        this.saveLetters(this.getSampleLetters());
+        const sampleLetters = this.getSampleLetters();
+        this.lettersSubject.next(sampleLetters);
+        this.saveLetters(sampleLetters);
       }
     } else {
       const sampleLetters = this.getSampleLetters();
@@ -39,44 +42,136 @@ export class LetterService {
         id: 'sample1',
         title: '1905年上海寄北京红印花封',
         description: '清代红印花加盖邮票实寄封，经天津中转',
-        postmarks: [
+        postmarks: [],
+        versions: [
           {
-            id: 's1-1',
+            id: 'v1-sample1',
             letterId: 'sample1',
-            type: 'origin',
-            locationName: '上海',
-            latitude: 31.2304,
-            longitude: 121.4737,
-            postmarkDate: '1905-03-15',
-            clarity: 'clear',
-            notes: '上海工部局书信馆邮戳',
-            sequence: 0
+            name: '方案A：天津中转',
+            description: '经天津海关中转，主流观点',
+            isOfficial: true,
+            postmarks: [
+              {
+                id: 's1-v1-1',
+                letterId: 'sample1',
+                type: 'origin',
+                locationName: '上海',
+                latitude: 31.2304,
+                longitude: 121.4737,
+                postmarkDate: '1905-03-15',
+                clarity: 'clear',
+                notes: '上海工部局书信馆邮戳',
+                sequence: 0,
+                locationPrecision: 'exact'
+              },
+              {
+                id: 's1-v1-2',
+                letterId: 'sample1',
+                type: 'transit',
+                locationName: '天津',
+                latitude: 39.0842,
+                longitude: 117.2008,
+                postmarkDate: '1905-03-20',
+                clarity: 'partial',
+                notes: '天津海关中转戳',
+                sequence: 1,
+                locationPrecision: 'exact'
+              },
+              {
+                id: 's1-v1-3',
+                letterId: 'sample1',
+                type: 'destination',
+                locationName: '北京',
+                latitude: 39.9042,
+                longitude: 116.4074,
+                postmarkDate: '1905-03-22',
+                clarity: 'clear',
+                notes: '北京到达戳',
+                sequence: 2,
+                locationPrecision: 'exact'
+              }
+            ],
+            createdAt: now,
+            updatedAt: now
           },
           {
-            id: 's1-2',
+            id: 'v2-sample1',
             letterId: 'sample1',
-            type: 'transit',
-            locationName: '天津',
-            latitude: 39.0842,
-            longitude: 117.2008,
-            postmarkDate: '1905-03-20',
-            clarity: 'partial',
-            notes: '天津海关中转戳',
-            sequence: 1
-          },
-          {
-            id: 's1-3',
-            letterId: 'sample1',
-            type: 'destination',
-            locationName: '北京',
-            latitude: 39.9042,
-            longitude: 116.4074,
-            postmarkDate: '1905-03-22',
-            clarity: 'clear',
-            notes: '北京到达戳',
-            sequence: 2
+            name: '方案B：经济南绕行',
+            description: '有学者认为经济南中转，路程更长',
+            isOfficial: false,
+            postmarks: [
+              {
+                id: 's1-v2-1',
+                letterId: 'sample1',
+                type: 'origin',
+                locationName: '上海',
+                latitude: 31.2304,
+                longitude: 121.4737,
+                postmarkDate: '1905-03-15',
+                clarity: 'clear',
+                notes: '上海工部局书信馆邮戳',
+                sequence: 0,
+                locationPrecision: 'exact'
+              },
+              {
+                id: 's1-v2-2',
+                letterId: 'sample1',
+                type: 'transit',
+                locationName: '南京',
+                latitude: 32.0603,
+                longitude: 118.7969,
+                postmarkDate: '1905-03-17',
+                clarity: 'fuzzy',
+                notes: '南京中转，戳记模糊存疑',
+                sequence: 1,
+                locationPrecision: 'exact'
+              },
+              {
+                id: 's1-v2-3',
+                letterId: 'sample1',
+                type: 'transit',
+                locationName: '济南',
+                latitude: 36.6512,
+                longitude: 117.1201,
+                postmarkDate: null,
+                clarity: 'fuzzy',
+                notes: '济南中转，日期不可考',
+                sequence: 2,
+                locationPrecision: 'approximate'
+              },
+              {
+                id: 's1-v2-4',
+                letterId: 'sample1',
+                type: 'transit',
+                locationName: '天津',
+                latitude: 39.0842,
+                longitude: 117.2008,
+                postmarkDate: '1905-03-21',
+                clarity: 'partial',
+                notes: '天津海关中转戳',
+                sequence: 3,
+                locationPrecision: 'exact'
+              },
+              {
+                id: 's1-v2-5',
+                letterId: 'sample1',
+                type: 'destination',
+                locationName: '北京',
+                latitude: 39.9042,
+                longitude: 116.4074,
+                postmarkDate: '1905-03-22',
+                clarity: 'clear',
+                notes: '北京到达戳',
+                sequence: 4,
+                locationPrecision: 'exact'
+              }
+            ],
+            createdAt: now,
+            updatedAt: now
           }
         ],
+        officialVersionId: 'v1-sample1',
         createdAt: now,
         updatedAt: now
       },
@@ -447,5 +542,204 @@ export class LetterService {
 
   private generateId(): string {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  }
+
+  getVersions(letterId: string): RouteVersion[] {
+    const letter = this.getLetterById(letterId);
+    if (!letter) return [];
+    return letter.versions || [];
+  }
+
+  getVersionById(letterId: string, versionId: string): RouteVersion | undefined {
+    return this.getVersions(letterId).find(v => v.id === versionId);
+  }
+
+  addVersion(letterId: string, version: Omit<RouteVersion, 'id' | 'letterId' | 'createdAt' | 'updatedAt'>): RouteVersion | undefined {
+    const letter = this.getLetterById(letterId);
+    if (!letter) return undefined;
+
+    const newVersion: RouteVersion = {
+      ...version,
+      id: this.generateId(),
+      letterId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const versions = [...(letter.versions || []), newVersion];
+    this.updateLetter(letterId, { versions });
+    return newVersion;
+  }
+
+  updateVersion(letterId: string, versionId: string, updates: Partial<RouteVersion>): RouteVersion | undefined {
+    const letter = this.getLetterById(letterId);
+    if (!letter) return undefined;
+
+    const versions = (letter.versions || []).map(v =>
+      v.id === versionId ? { ...v, ...updates, updatedAt: new Date().toISOString() } : v
+    );
+
+    this.updateLetter(letterId, { versions });
+    return versions.find(v => v.id === versionId);
+  }
+
+  deleteVersion(letterId: string, versionId: string): boolean {
+    const letter = this.getLetterById(letterId);
+    if (!letter) return false;
+
+    const versions = (letter.versions || []).filter(v => v.id !== versionId);
+    const wasOfficial = letter.officialVersionId === versionId;
+
+    this.updateLetter(letterId, {
+      versions,
+      officialVersionId: wasOfficial ? undefined : letter.officialVersionId
+    });
+
+    return versions.length < (letter.versions?.length || 0);
+  }
+
+  setOfficialVersion(letterId: string, versionId: string | undefined): boolean {
+    const letter = this.getLetterById(letterId);
+    if (!letter) return false;
+
+    if (versionId && !this.getVersionById(letterId, versionId)) {
+      return false;
+    }
+
+    const versions = (letter.versions || []).map(v => ({
+      ...v,
+      isOfficial: v.id === versionId
+    }));
+
+    this.updateLetter(letterId, {
+      versions,
+      officialVersionId: versionId
+    });
+
+    return true;
+  }
+
+  getOfficialVersion(letterId: string): RouteVersion | undefined {
+    const letter = this.getLetterById(letterId);
+    if (!letter) return undefined;
+    if (letter.officialVersionId) {
+      return this.getVersionById(letterId, letter.officialVersionId);
+    }
+    return (letter.versions || []).find(v => v.isOfficial);
+  }
+
+  getVersionPostmarks(letterId: string, versionId?: string): Postmark[] {
+    const letter = this.getLetterById(letterId);
+    if (!letter) return [];
+
+    if (versionId) {
+      const version = this.getVersionById(letterId, versionId);
+      return version ? version.postmarks : [];
+    }
+
+    const official = this.getOfficialVersion(letterId);
+    if (official) return official.postmarks;
+
+    if (letter.versions && letter.versions.length > 0) {
+      return letter.versions[0].postmarks;
+    }
+
+    return letter.postmarks || [];
+  }
+
+  getRouteSegmentsForVersion(version: RouteVersion): RouteSegment[] {
+    const sorted = [...version.postmarks].sort((a, b) => a.sequence - b.sequence);
+    const segments: RouteSegment[] = [];
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const from = sorted[i];
+      const to = sorted[i + 1];
+      const durationDays = this.calculateDuration(from.postmarkDate, to.postmarkDate);
+      const distanceKm = this.calculateDistance(from, to);
+      const { isAnomaly, anomalyReason } = this.detectAnomaly(from, to, durationDays, distanceKm);
+
+      segments.push({
+        from,
+        to,
+        durationDays,
+        distanceKm,
+        isAnomaly,
+        anomalyReason
+      });
+    }
+
+    return segments;
+  }
+
+  getVersionDuration(version: RouteVersion): number | null {
+    const sorted = [...version.postmarks].sort((a, b) => a.sequence - b.sequence);
+    const origin = sorted.find(p => p.type === 'origin');
+    const dest = sorted.find(p => p.type === 'destination');
+
+    if (origin?.postmarkDate && dest?.postmarkDate) {
+      const start = new Date(origin.postmarkDate);
+      const end = new Date(dest.postmarkDate);
+      const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      return days >= 0 ? days : null;
+    }
+    return null;
+  }
+
+  getVersionTransitCities(version: RouteVersion): string[] {
+    return version.postmarks
+      .filter(p => p.type === 'transit')
+      .map(p => p.locationName);
+  }
+
+  getVersionTotalDistance(version: RouteVersion): number {
+    const segments = this.getRouteSegmentsForVersion(version);
+    return segments.reduce((sum, s) => sum + (s.distanceKm || 0), 0);
+  }
+
+  duplicateVersion(letterId: string, sourceVersionId: string, newName: string): RouteVersion | undefined {
+    const source = this.getVersionById(letterId, sourceVersionId);
+    if (!source) return undefined;
+
+    return this.addVersion(letterId, {
+      name: newName,
+      description: source.description,
+      postmarks: source.postmarks.map(p => ({ ...p, id: this.generateId() })),
+      isOfficial: false
+    });
+  }
+
+  createVersionFromLetter(letterId: string, name: string): RouteVersion | undefined {
+    const letter = this.getLetterById(letterId);
+    if (!letter) return undefined;
+
+    return this.addVersion(letterId, {
+      name,
+      description: '',
+      postmarks: letter.postmarks.map(p => ({ ...p, id: this.generateId() })),
+      isOfficial: false
+    });
+  }
+
+  migrateLegacyLetter(letter: Letter): Letter {
+    if (letter.versions && letter.versions.length > 0) {
+      return letter;
+    }
+
+    const defaultVersion: RouteVersion = {
+      id: this.generateId(),
+      letterId: letter.id,
+      name: '初始方案',
+      description: '自动迁移的原始方案',
+      postmarks: letter.postmarks || [],
+      isOfficial: true,
+      createdAt: letter.createdAt,
+      updatedAt: letter.updatedAt
+    };
+
+    return {
+      ...letter,
+      versions: [defaultVersion],
+      officialVersionId: defaultVersion.id
+    };
   }
 }
