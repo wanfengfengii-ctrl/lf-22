@@ -20,6 +20,10 @@ import { MatIconModule } from '@angular/material/icon';
         <mat-icon>bar_chart</mat-icon>
         统计分析
       </a>
+      <a mat-button routerLink="/knowledge" routerLinkActive="active">
+        <mat-icon>menu_book</mat-icon>
+        邮路知识库
+      </a>
     </mat-toolbar>
     <div class="content">
       <router-outlet></router-outlet>

@@ -21,8 +21,10 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { LetterService } from '../../services/letter.service';
 import { ValidationService } from '../../services/validation.service';
 import { ConfidenceService } from '../../services/confidence.service';
-import { PostmarkType, PostmarkClarity, ValidationResult, RouteVersion, ConfidenceScore, LocationPrecision } from '../../models/letter.model';
+import { PostmarkType, PostmarkClarity, ValidationResult, RouteVersion, ConfidenceScore, LocationPrecision, Letter } from '../../models/letter.model';
 import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.component';
+import { RouteInferenceComponent } from '../route-inference/route-inference.component';
+import { InferredRoute, InferredPostmark } from '../../models/postal-knowledge.model';
 
 @Component({
   selector: 'app-letter-edit',
@@ -45,7 +47,8 @@ import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.compone
     MatTabsModule,
     MatDialogModule,
     MatProgressBarModule,
-    MatTooltipModule
+    MatTooltipModule,
+    RouteInferenceComponent
   ],
   template: `
     <div class="page-header">
@@ -348,6 +351,23 @@ import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.compone
                 无法生成流转路线图（存在时间倒序或缺少起止点）
               </span>
             </div>
+          </mat-card-content>
+        </mat-card>
+
+        <mat-card class="inference-card">
+          <mat-card-header>
+            <mat-card-title>
+              <mat-icon class="inference-icon">psychology</mat-icon>
+              规则推断邮路
+            </mat-card-title>
+          </mat-card-header>
+          <mat-card-content>
+            <app-route-inference
+              *ngIf="inferenceLetter"
+              [letter]="inferenceLetter"
+              [versionId]="selectedVersion?.id"
+              (applyRoute)="onApplyInferredRoute($event)"
+            ></app-route-inference>
           </mat-card-content>
         </mat-card>
       </ng-container>
@@ -665,6 +685,13 @@ import { ConfirmDialogComponent } from '../confirm-dialog/confirm-dialog.compone
       align-items: center;
       gap: 8px;
     }
+    .inference-card {
+      border-left: 4px solid #795548;
+    }
+    .inference-icon {
+      color: #795548;
+      margin-right: 8px;
+    }
   `]
 })
 export class LetterEditComponent implements OnInit {
@@ -744,6 +771,33 @@ export class LetterEditComponent implements OnInit {
       { label: '时间顺序', score: b.temporalOrder.score, max: b.temporalOrder.max, details: b.temporalOrder.details, color: '#ff9800' },
       { label: '路线连续性', score: b.routeContinuity.score, max: b.routeContinuity.max, details: b.routeContinuity.details, color: '#795548' }
     ];
+  }
+
+  get inferenceLetter(): Letter | null {
+    return this.buildLetterForInference() as Letter | null;
+  }
+
+  private buildLetterForInference(): any {
+    const formValue = this.letterForm.value;
+    const versions = (formValue.versions || []).map((v: any, idx: number) => ({
+      ...v,
+      id: v.id || '',
+      letterId: this.letterId || '',
+      postmarks: this.convertPostmarkDates(v.postmarks || [])
+    }));
+
+    const officialVersion = versions.find((v: any) => v.isOfficial);
+
+    return {
+      id: this.letterId || '',
+      title: formValue.title || '未命名信件',
+      description: formValue.description || '',
+      postmarks: officialVersion?.postmarks || [],
+      versions,
+      officialVersionId: officialVersion?.id || formValue.officialVersionId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
   }
 
   private createForm(): void {
@@ -1122,6 +1176,40 @@ export class LetterEditComponent implements OnInit {
     if (this.letterId) {
       this.loadLetter(this.letterId);
     }
+  }
+
+  onApplyInferredRoute(route: InferredRoute): void {
+    if (!this.selectedVersionForm) return;
+
+    const postmarksFormArray = this.selectedVersionForm.get('postmarks') as FormArray;
+    while (postmarksFormArray.length > 0) {
+      postmarksFormArray.removeAt(0);
+    }
+
+    route.postmarks.forEach((pm, index) => {
+      const postmarkForm = this.createPostmarkForm({
+        id: pm.isInferred ? '' : pm.id,
+        type: pm.type,
+        locationName: pm.locationName,
+        latitude: pm.latitude,
+        longitude: pm.longitude,
+        postmarkDate: pm.postmarkDate ? new Date(pm.postmarkDate) : null,
+        clarity: pm.isInferred ? 'fuzzy' : pm.clarity,
+        notes: pm.inferenceReason || '',
+        sequence: index,
+        locationPrecision: pm.latitude && pm.longitude ? 'exact' : 'unknown'
+      });
+      postmarksFormArray.push(postmarkForm);
+    });
+
+    const descriptionControl = this.selectedVersionForm.get('description');
+    if (descriptionControl) {
+      const currentDesc = descriptionControl.value || '';
+      const inferenceDesc = `\n\n【规则推断依据】\n${route.evidences.filter(e => e.supporting).map(e => '✓ ' + e.description).join('\n')}`;
+      descriptionControl.setValue(currentDesc + inferenceDesc);
+    }
+
+    this.snackBar.open('已应用推断方案', '关闭', { duration: 3000 });
   }
 
   goBack(): void {

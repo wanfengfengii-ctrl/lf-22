@@ -4,6 +4,7 @@ import { LetterListComponent } from './components/letter-list/letter-list.compon
 import { LetterEditComponent } from './components/letter-edit/letter-edit.component';
 import { RouteMapComponent } from './components/route-map/route-map.component';
 import { StatisticsComponent } from './components/statistics/statistics.component';
+import { KnowledgeBaseComponent } from './components/knowledge-base/knowledge-base.component';
 
 export const routes: Routes = [
   {
@@ -16,6 +17,7 @@ export const routes: Routes = [
       { path: 'letters/:id/edit', component: LetterEditComponent },
       { path: 'letters/:id/map', component: RouteMapComponent },
       { path: 'statistics', component: StatisticsComponent },
+      { path: 'knowledge', component: KnowledgeBaseComponent },
       { path: '**', redirectTo: 'letters' }
     ]
   }
