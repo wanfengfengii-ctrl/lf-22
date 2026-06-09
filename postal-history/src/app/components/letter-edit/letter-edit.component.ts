@@ -859,17 +859,22 @@ export class LetterEditComponent implements OnInit {
   }
 
   addVersion(): void {
+    const isFirstVersion = this.versions.length === 0;
     const newVersion = {
       name: `方案 ${this.versions.length + 1}`,
       description: '',
-      isOfficial: false,
+      isOfficial: isFirstVersion,
       postmarks: [
         { type: 'origin', locationName: '', latitude: null, longitude: null, postmarkDate: null, clarity: 'clear', notes: '', sequence: 0, locationPrecision: 'exact' },
         { type: 'destination', locationName: '', latitude: null, longitude: null, postmarkDate: null, clarity: 'clear', notes: '', sequence: 1, locationPrecision: 'exact' }
       ]
     };
-    this.versionsFormArray.push(this.createVersionForm(newVersion as any));
+    const versionForm = this.createVersionForm(newVersion as any);
+    this.versionsFormArray.push(versionForm);
     this.selectedVersionIndex = this.versions.length - 1;
+    if (isFirstVersion) {
+      this.letterForm.get('officialVersionId')?.setValue('');
+    }
     this.updateConfidence();
   }
 
@@ -911,13 +916,20 @@ export class LetterEditComponent implements OnInit {
 
     dialogRef.afterClosed().subscribe(result => {
       if (result) {
+        const wasOfficial = this.versions[index]?.isOfficial;
         this.versionsFormArray.removeAt(index);
+
         if (this.selectedVersionIndex >= this.versions.length) {
           this.selectedVersionIndex = this.versions.length - 1;
         }
         if (this.selectedVersionIndex < 0 && this.versions.length > 0) {
           this.selectedVersionIndex = 0;
         }
+
+        if (wasOfficial && this.versions.length > 0) {
+          this.ensureOfficialVersion();
+        }
+
         this.updateConfidence();
         this.snackBar.open('方案已删除', '关闭', { duration: 2000 });
       }
@@ -931,6 +943,16 @@ export class LetterEditComponent implements OnInit {
     }
     this.letterForm.get('officialVersionId')?.setValue(this.versions[index].id || '');
     this.snackBar.open('已设为正式方案', '关闭', { duration: 2000 });
+  }
+
+  private ensureOfficialVersion(): void {
+    const versions = this.versionsFormArray;
+    if (versions.length === 0) return;
+
+    const hasOfficial = this.versions.some(v => v.isOfficial);
+    if (!hasOfficial) {
+      versions.at(0).get('isOfficial')?.setValue(true);
+    }
   }
 
   addTransitPostmark(): void {
@@ -1072,6 +1094,8 @@ export class LetterEditComponent implements OnInit {
 
   save(): void {
     if (!this.letterForm.valid) return;
+
+    this.ensureOfficialVersion();
 
     const letterData = this.buildLetterFromForm();
 

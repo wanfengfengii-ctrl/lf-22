@@ -623,9 +623,15 @@ export class LetterService {
     const letter = this.getLetterById(letterId);
     if (!letter) return undefined;
     if (letter.officialVersionId) {
-      return this.getVersionById(letterId, letter.officialVersionId);
+      const version = this.getVersionById(letterId, letter.officialVersionId);
+      if (version) return version;
     }
-    return (letter.versions || []).find(v => v.isOfficial);
+    const byFlag = (letter.versions || []).find(v => v.isOfficial);
+    if (byFlag) return byFlag;
+    if (letter.versions && letter.versions.length > 0) {
+      return letter.versions[0];
+    }
+    return undefined;
   }
 
   getVersionPostmarks(letterId: string, versionId?: string): Postmark[] {
